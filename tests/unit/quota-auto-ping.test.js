@@ -26,6 +26,8 @@ vi.mock("@/shared/constants/config", () => ({
       claude: {
         settingsKey: "claudeAutoPing",
         quotaKey: "session (5h)",
+        pingWhenNoWindow: true,
+        idleWindowPingIntervalMs: 600000,
         pingModel: "claude-haiku-4-5-20251001",
         pingText: "hi",
         pingMaxTokens: 1,
@@ -368,5 +370,55 @@ describe("quota auto-ping", () => {
       max_tokens: 1,
       messages: [{ role: "user", content: "hi" }],
     });
+  });
+
+  const idleClaude = (connection = {}) => {
+    deps.getSettings.mockResolvedValue({ claudeAutoPing: { connections: { "claude-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "claude" ? [{ id: "claude-1", provider: "claude", authType: "oauth", accessToken: "token", ...connection }] : []
+    ));
+  };
+
+  it("opens a Claude window when the session has no resetAt", async () => {
+    idleClaude();
+    getClaudeUsage.mockResolvedValue({
+      quotas: { "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: null } },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).toHaveBeenCalledTimes(1);
+    expect(deps.updateProviderConnection).toHaveBeenCalledWith("claude-1", expect.objectContaining({ lastPingAt: expect.any(String) }));
+  });
+
+  it("does not re-ping an idle Claude window inside the interval", async () => {
+    idleClaude({ lastPingAt: "2026-01-01T11:55:00.000Z" });
+    getClaudeUsage.mockResolvedValue({
+      quotas: { "session (5h)": { used: 0, total: 100, remaining: 100, resetAt: null } },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not ping Claude when usage has no session quota at all", async () => {
+    idleClaude();
+    getClaudeUsage.mockResolvedValue({ quotas: {} });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("does not ping an idle Claude window whose session quota is exhausted", async () => {
+    idleClaude();
+    getClaudeUsage.mockResolvedValue({
+      quotas: { "session (5h)": { used: 100, total: 100, remaining: 0, resetAt: null } },
+    });
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
   });
 });

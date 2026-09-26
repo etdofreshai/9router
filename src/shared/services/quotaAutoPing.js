@@ -212,7 +212,16 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;
-  if (!resetAt) return;
+  if (!resetAt) {
+    // No resetAt means no window is open: the previous one expired with no
+    // traffic, and Claude only opens a new one on the next request. Waiting
+    // for a reset that will never come would leave the account idle forever,
+    // so open the window now.
+    if (providerConfig.pingWhenNoWindow && quota && !isQuotaExhausted(quota)) {
+      await pingIdleWindow(connection, provider, providerConfig, handler, deps, state, key, proxyOptions);
+    }
+    return;
+  }
 
   state.resetCache[key] = resetAt;
 
@@ -244,6 +253,25 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     updatedAt: new Date().toISOString(),
   });
   console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (reset ${resetAt})`);
+}
+
+async function pingIdleWindow(connection, provider, providerConfig, handler, deps, state, key, proxyOptions) {
+  // A window can take a moment to show up in usage after the ping; don't re-ping every tick meanwhile.
+  if (wasPingedRecently(connection, providerConfig.idleWindowPingIntervalMs, Date.now())) return;
+
+  const ok = await handler.sendPing(connection, providerConfig, proxyOptions, deps);
+  if (!ok) {
+    state.failureCache[key] = Date.now();
+    console.warn(`[AutoPing] ${provider}:${connection.id}: ping failed (no active window)`);
+    return;
+  }
+
+  delete state.failureCache[key];
+  await deps.updateProviderConnection(connection.id, {
+    lastPingAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  console.log(`[AutoPing] ${provider}:${connection.id}: ping sent (no active window)`);
 }
 
 function createDefaultDeps() {

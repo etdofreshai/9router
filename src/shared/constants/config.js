@@ -72,6 +72,8 @@ export const QUOTA_AUTOPING_CONFIG = {
     claude: {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
       quotaKey: "session (5h)",         // quota key returned by usage handler
+      pingWhenNoWindow: true,           // no resetAt = idle account; open a window instead of waiting
+      idleWindowPingIntervalMs: 600000, // at most one idle-window ping per 10min
       pingModel: "claude-haiku-4-5-20251001",
       pingText: "hi",
       pingMaxTokens: 1,
