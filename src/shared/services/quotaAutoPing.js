@@ -20,7 +20,7 @@ const providerHandlers = {
     sendPing: sendClaudePing,
   },
   codex: {
-    getUsage: getCodexUsage,
+    getUsage: (token, proxy, connection) => getCodexUsage(token, proxy, connection.providerSpecificData),
     sendPing: sendCodexPing,
   },
 };
@@ -208,7 +208,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
     return;
   }
 
-  const usage = await handler.getUsage(connection.accessToken, proxyOptions);
+  const usage = await handler.getUsage(connection.accessToken, proxyOptions, connection);
   const quotas = usage?.quotas || {};
   const quota = quotas?.[providerConfig.quotaKey];
   const resetAt = quota?.resetAt;

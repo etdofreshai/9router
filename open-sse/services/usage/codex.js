@@ -104,13 +104,17 @@ function getCodexSparkRateLimit(data) {
   }) || null;
 }
 
-export async function getCodexUsage(accessToken, proxyOptions = null) {
+export async function getCodexUsage(accessToken, proxyOptions = null, providerSpecificData = null) {
   try {
+    // Without ChatGPT-Account-ID the endpoint reports a different (empty) account context,
+    // which can show 100% used while the connection's workspace still has quota.
+    const accountId = getCodexAccountId(providerSpecificData);
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Accept": "application/json",
+        ...(accountId && { "ChatGPT-Account-ID": accountId }),
       },
     }, proxyOptions);
 
